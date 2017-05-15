@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?> 
+
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="cig::small_vector&lt;*&gt;">
+    <Intrinsic Name="size" Expression="_end_ptr - _begin_ptr" />
+    <Intrinsic Name="capacity" Expression="_capacity_ptr - _begin_ptr" />
+    <DisplayString>{{ size={size()} }}</DisplayString>
+    <Expand>
+      <Item Name="[capacity]" ExcludeView="simple">capacity()</Item>
+      <ArrayItems>
+        <Size>size()</Size>
+        <ValuePointer>_begin_ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+</AutoVisualizer>

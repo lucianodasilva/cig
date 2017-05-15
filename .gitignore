@@ -27,3 +27,18 @@
 *.exe
 *.out
 *.app
+
+# build folder
+build/
+
+# tool generated folders
+extra/libclang
+extra/libclang_work
+
+#clion
+.idea
+cmake-build*/
+
+#vscode
+.vscode
+.vs
