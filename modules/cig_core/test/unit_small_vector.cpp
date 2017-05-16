@@ -1,6 +1,7 @@
 #include <catch.hpp>
 #include <cig_core.h>
 #include <memory>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -16,17 +17,33 @@ using namespace cig;
 namespace cig {
     namespace tests {
 
+		struct assign_counters {
+			size_t copy_counter;
+			size_t move_counter;
+
+			inline void reset () {
+				copy_counter = 0;
+				move_counter = 0;
+			}
+
+			inline bool check_copy(size_t v) {
+				return copy_counter == v;
+			}
+
+			inline bool check_move(size_t v) {
+				return move_counter == v;
+			}
+		};
+
 		// structures to be moved
 		struct test_item {
 
-			size_t * move_counter = nullptr;
-			size_t * copy_counter = nullptr;
+			assign_counters * counters = nullptr;
 
             int value = 0;
 
-            test_item(size_t & m_counter, size_t & c_counter, int v) :
-				move_counter(&m_counter),
-				copy_counter(&c_counter),
+            test_item(assign_counters & counters_v, int v) :
+				counters (&counters_v),
                 value(v)
             {}
 
@@ -41,33 +58,28 @@ namespace cig {
 			}
 
             test_item & operator = (const test_item & m) {
-				move_counter = m.move_counter;
-				copy_counter = m.copy_counter;
+				counters 	= m.counters;
+                value 		= m.value;
 
-                value = m.value;
-
-				++(*copy_counter);
+				++(counters->copy_counter);
 				return *this;
 			}
 
             test_item & operator = (test_item && m) {
 				this->swap(m);
-                ++(*move_counter);
+                ++(counters->move_counter);
                 return *this;
 			}
 
             void swap (test_item & v) {
-                std::swap(move_counter, v.move_counter);
-                std::swap(copy_counter, v.copy_counter);
-
+                std::swap(counters, v.counters);
                 std::swap(value, v.value);
             }
 
-			static inline void init_items(small_vector_base < test_item > & victim, size_t item_count, size_t & copy_count, size_t & move_count) {
+			static inline void init_items(small_vector_base < test_item > & victim, size_t item_count, assign_counters & counters) {
 				for (int i = 0; i < item_count; ++i) {
 					victim.emplace_back(
-						move_count,
-						copy_count,
+						counters,
                         i
 					);
 				}
@@ -76,24 +88,15 @@ namespace cig {
 		};
 
         inline bool operator == (const test_item & v1, const test_item & v2) {
-            return v1.copy_counter == v2.copy_counter &&
-                   v1.move_counter == v2.move_counter &&
-                   v1.value == v2.value;
+            return v1.value == v2.value;
         }
 
         SCENARIO("small_vector push_back operations", "[small_vector]"){
 
-            size_t
-                    copy_count = 0,
-                    move_count = 0;
-
-            auto reset_counters = [&](){
-                copy_count = 0;
-                move_count = 0;
-            };
+            assign_counters counters;
 
             auto make_item = [&](int v) -> test_item {
-                return { move_count, copy_count, v };
+                return { counters, v };
             };
 
             GIVEN("a vector containing some items"){
@@ -103,9 +106,9 @@ namespace cig {
 
                 small_vector < test_item, initial_capacity > victim;
 
-                test_item::init_items(victim, initial_size, copy_count, move_count);
+                test_item::init_items(victim, initial_size, counters);
 
-                reset_counters();
+                counters.reset();
 
                 WHEN("an item is added as lvalue") {
                     const auto added_value = make_item(999);
@@ -115,7 +118,9 @@ namespace cig {
                     THEN("size must change and value must be present by copy"){
                         REQUIRE(victim.size() == initial_size + 1);
                         REQUIRE(victim.back() == added_value);
-                        REQUIRE(copy_count == 1);
+
+						REQUIRE(counters.check_move(0));
+                        REQUIRE(counters.check_copy(1));
                     }
                 }
                 WHEN("an item is added as rvalue") {
@@ -127,7 +132,9 @@ namespace cig {
                     THEN("size must change and value must be present by move"){
                         REQUIRE(victim.size() == initial_size + 1);
                         REQUIRE(victim.back().value == item_value);
-                        REQUIRE(move_count == 1);
+
+                        REQUIRE(counters.check_move(1));
+						REQUIRE(counters.check_copy(0));
                     }
                 }
             }
@@ -182,20 +189,19 @@ namespace cig {
                 }
                 WHEN("move constructor"){
 
-                    size_t
-                            copy_count = 0,
-                            move_count = 0;
+                    assign_counters counters;
 
                     small_vector < test_item, initial_capacity > source;
 
-                    test_item::init_items(source, initial_size, copy_count, move_count);
+                    test_item::init_items(source, initial_size, counters);
 
                     small_vector < test_item, initial_capacity > victim = std::move(source);
 
                     THEN("construction by move") {
                         REQUIRE(victim.size() == initial_size);
-                        REQUIRE(copy_count == 0);
-                        REQUIRE(move_count == initial_size);
+
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(initial_size));
                     }
                 }
                 WHEN("initializer list constructor") {
@@ -212,23 +218,63 @@ namespace cig {
                 }
             }
         }
+		SCENARIO("small_vector destruction", "[small_vector]"){
 
-        SCENARIO("attribution", "[small_vector]") {
+			GIVEN("a structure item type") {
+
+				size_t destroyed_item_count = 0;
+
+				struct dctor_item {
+					size_t * destroyed_item_count_ptr = nullptr;
+
+					dctor_item() {}
+					dctor_item (size_t * counter) : destroyed_item_count_ptr (counter) {}
+
+					~dctor_item() {
+						if (destroyed_item_count_ptr)
+							++(*destroyed_item_count_ptr);
+					}
+				};
+
+				WHEN("items are directly contained") {
+
+					{
+						small_vector < dctor_item, 10 > victim;
+						victim.push_back({&destroyed_item_count});
+						// reset counter to cancel the destruction of the copied parameter
+						destroyed_item_count = 0;
+					}
+
+					THEN("items constructures should also be invoked"){
+						REQUIRE(destroyed_item_count == 1);
+					}
+				}
+				WHEN("items are heap allocated") {
+					auto item = std::make_unique < dctor_item > (&destroyed_item_count);
+
+					{
+
+						small_vector < dctor_item *, 10 > victim;
+						victim.push_back(item.get());
+						// reset counter to cancel the destruction of the copied parameter
+						destroyed_item_count = 0;
+					}
+
+					THEN("items constructures should also be invoked"){
+						REQUIRE(destroyed_item_count == 0);
+					}
+				}
+			}
+		}
+        SCENARIO("small_vector attribution", "[small_vector]") {
 
             size_t const initial_size = 10;
             size_t const initial_capacity = initial_size * 2;
 
-            size_t
-                    copy_count = 0,
-                    move_count = 0;
-
-            auto reset_counters = [&](){
-                copy_count = 0;
-                move_count = 0;
-            };
+            assign_counters counters;
 
             auto make_item = [&](int v) -> test_item {
-                return { move_count, copy_count, v };
+                return { counters, v };
             };
 
             small_vector < test_item, initial_capacity > victim;
@@ -237,8 +283,8 @@ namespace cig {
                 WHEN("assigned vector lesser than capacity"){
                     small_vector < test_item, initial_capacity > assigned;
 
-                    test_item::init_items(assigned, initial_capacity, copy_count, move_count);
-                    reset_counters ();
+                    test_item::init_items(assigned, initial_capacity, counters);
+                    counters.reset ();
 
                     victim = assigned;
 
@@ -246,8 +292,8 @@ namespace cig {
                         REQUIRE(victim.capacity () == assigned.capacity());
                         REQUIRE(victim.size() == assigned.size());
 
-                        REQUIRE(copy_count == assigned.size());
-                        REQUIRE(move_count == 0);
+                        REQUIRE(counters.check_copy(assigned.size()));
+                        REQUIRE(counters.check_move(0));
 
                         REQUIRE(std::equal(
                                 assigned.begin(), assigned.end(),
@@ -255,7 +301,7 @@ namespace cig {
                         ));
                     }
                 }
-                WHEN("assigned vector greater than victim capacity"){
+				WHEN("assigned vector greater than victim capacity"){
                     size_t const initial_assigned_size = initial_capacity + initial_size;
 
                     size_t const expected_capacity = common::next_pow_2(
@@ -264,8 +310,8 @@ namespace cig {
 
                     small_vector < test_item, initial_assigned_size > assigned;
 
-                    test_item::init_items(assigned, initial_assigned_size, copy_count, move_count);
-                    reset_counters ();
+                    test_item::init_items(assigned, initial_assigned_size, counters);
+                    counters.reset ();
 
                     victim = assigned;
 
@@ -273,8 +319,8 @@ namespace cig {
                         REQUIRE(victim.capacity () == expected_capacity);
                         REQUIRE(victim.size() == initial_assigned_size);
 
-                        REQUIRE(copy_count == initial_assigned_size);
-                        REQUIRE(move_count == 0);
+                        REQUIRE(counters.check_copy(initial_assigned_size));
+                        REQUIRE(counters.check_move(0));
 
                         REQUIRE(std::equal(
                                 assigned.begin(), assigned.end(),
@@ -287,8 +333,8 @@ namespace cig {
                 WHEN("assigned vector lesser than capacity"){
                     small_vector < test_item, initial_capacity > assigned;
 
-                    test_item::init_items(assigned, initial_capacity, copy_count, move_count);
-                    reset_counters ();
+                    test_item::init_items(assigned, initial_capacity, counters);
+                    counters.reset ();
 
                     victim = std::move(assigned);
 
@@ -296,8 +342,8 @@ namespace cig {
                         REQUIRE(victim.capacity () == initial_capacity);
                         REQUIRE(victim.size() == initial_capacity);
 
-                        REQUIRE(copy_count == 0);
-                        REQUIRE(move_count == assigned.capacity());
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(assigned.capacity()));
                     }
                 }
                 WHEN("assigned vector greater than victim capacity"){
@@ -309,8 +355,8 @@ namespace cig {
 
                     small_vector < test_item, initial_assigned_size > assigned;
 
-                    test_item::init_items(assigned, initial_assigned_size, copy_count, move_count);
-                    reset_counters ();
+                    test_item::init_items(assigned, initial_assigned_size, counters);
+                    counters.reset ();
 
                     victim = std::move(assigned);
 
@@ -318,292 +364,435 @@ namespace cig {
                         REQUIRE(victim.capacity () == expected_capacity);
                         REQUIRE(victim.size() == initial_assigned_size);
 
-                        REQUIRE(copy_count == 0);
-                        REQUIRE(move_count == initial_assigned_size);
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(initial_assigned_size));
                     }
                 }
             }
+			GIVEN("initializer an list"){
 
+				std::initializer_list < test_item > expectancy = {
+					make_item (1),
+					make_item (2),
+					make_item (3),
+					make_item (4),
+					make_item (5)
+				};
+
+				counters.reset();
+
+				WHEN("on assignment") {
+
+					victim = expectancy;
+
+					THEN("copy assignement of initialized list items"){
+						REQUIRE(victim.size() == expectancy.size());
+
+						REQUIRE(counters.check_copy(expectancy.size()));
+						REQUIRE(counters.check_move(0));
+
+						REQUIRE(std::equal(
+							expectancy.begin(), expectancy.end(),
+							victim.begin(), victim.end()
+						));
+					}
+				}
+			}
         }
+		SCENARIO("small_vector assign", "[small_vector]"){
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			assign_counters counters;
+
+			auto make_item = [&](int v) -> test_item {
+				return { counters, v };
+			};
+
+			small_vector < test_item, initial_capacity > victim;
+
+			GIVEN("assign operation call") {
+				WHEN("count and default value") {
+					test_item item = make_item (999);
+
+					victim.assign(initial_size, item);
+
+					THEN("should be assigned to n copies of the default value"){
+						REQUIRE(
+							std::count (victim.begin(), victim.end(), item) == initial_size
+						);
+					}
+				}
+				WHEN("iterators") {
+
+					small_vector < test_item, initial_size > expectancy;
+					test_item::init_items(expectancy, initial_size, counters);
+
+					counters.reset();
+
+					victim.assign(expectancy.begin(), expectancy.end());
+
+					THEN("should be assigned to copies of iterated values"){
+						REQUIRE(std::equal(
+							expectancy.begin(), expectancy.end(),
+							victim.begin(), victim.end()
+						));
+
+						REQUIRE(counters.check_move(0));
+						REQUIRE(counters.check_copy(initial_size));
+					}
+				}
+				WHEN("initializer list") {
+
+					std::initializer_list < test_item > expectancy = {
+						make_item (1),
+						make_item (2),
+						make_item (3),
+						make_item (4),
+						make_item (5)
+					};
+
+					counters.reset();
+
+					victim.assign(expectancy);
+
+					THEN("should be assigned to copies of initializer list values"){
+						REQUIRE(std::equal(
+							expectancy.begin(), expectancy.end(),
+							victim.begin(), victim.end()
+						));
+
+						REQUIRE(counters.check_move(0));
+						REQUIRE(counters.check_copy(expectancy.size()));
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector accessor operations", "[small_vector]"){
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			small_vector < int, initial_capacity > victim = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+			GIVEN("operation at"){
+				WHEN("within range") {
+					THEN("should return proper value"){
+						REQUIRE(victim.at(5) == victim.data()[5]);
+					}
+				}
+				WHEN("out of range") {
+					THEN("should throw out of range exception"){
+						REQUIRE_THROWS_AS(victim.at(initial_size + initial_size), std::out_of_range);
+					}
+				}
+			}
+			GIVEN("operator indexer"){
+				WHEN("within range"){
+					THEN("should return proper value"){
+						REQUIRE(victim[5] == victim.data()[5]);
+					}
+				}
+			}
+			GIVEN("operation back"){
+				WHEN("with elements"){
+					THEN("should return last item"){
+						REQUIRE(victim.back() == victim.data()[9]);
+					}
+				}
+				WHEN("const"){
+					auto const & const_victim = victim;
+					THEN("should return last item"){
+						REQUIRE(const_victim.back() == const_victim.data()[9]);
+					}
+				}
+			}
+			GIVEN("operation front"){
+				WHEN("with elements"){
+					THEN("should return first item"){
+						REQUIRE(victim.front() == victim.data()[0]);
+					}
+				}
+				WHEN("const"){
+					auto const & const_victim = victim;
+					THEN("should return first item"){
+						REQUIRE(const_victim.front() == const_victim.data()[0]);
+					}
+				}
+			}
+			GIVEN("operation data"){
+				WHEN("with elements"){
+					THEN("should return pointer to data"){
+						REQUIRE(victim.data()[0] == victim.front());
+					}
+				}
+				WHEN("const"){
+					THEN("should return pointer to data"){
+						auto const & const_victim = victim;
+						REQUIRE(const_victim.data()[0] == const_victim.front());
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector accessor reference editing", "[small_vector]"){
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			small_vector < int, initial_capacity > victim = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+			random_device rdev;
+			default_random_engine re (rdev());
+
+			uniform_int_distribution < int > value_dist (1000, 10000);
+
+			GIVEN("operation at"){
+				WHEN("within range") {
+					auto change_value = value_dist(re);
+
+					victim.at(5) = change_value;
+
+					THEN("should have edited value"){
+						REQUIRE(victim [5] == change_value);
+					}
+				}
+			}
+			GIVEN("operator indexer"){
+				WHEN("within range"){
+					auto change_value = value_dist(re);
+
+					victim[5] = change_value;
+
+					THEN("should have edited value"){
+						REQUIRE(victim [5] == change_value);
+					}
+				}
+			}
+			GIVEN("operation back"){
+				WHEN("with elements"){
+					auto change_value = value_dist(re);
+
+					victim.back() = change_value;
+
+					THEN("should have edited value"){
+						REQUIRE(victim.back() == change_value);
+					}
+				}
+			}
+			GIVEN("operation front"){
+				WHEN("with elements"){
+					auto change_value = value_dist(re);
+
+					victim.front() = change_value;
+
+					THEN("should have edited value"){
+						REQUIRE(victim.front() == change_value);
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector state operations", "[small_vector]") {
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			small_vector<int, initial_capacity> victim = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+			GIVEN("empty"){
+				WHEN("is empty"){
+					small_vector<int, initial_capacity> empty_victim;
+
+					THEN("empty should be true"){
+						REQUIRE(empty_victim.empty());
+					}
+				}
+				WHEN("is not empty"){
+					THEN("empty should be false"){
+						REQUIRE(!victim.empty());
+					}
+				}
+			}
+			GIVEN("size"){
+				WHEN("called"){
+					THEN("should return the appropriate number of contained items"){
+						REQUIRE(victim.size() == initial_size);
+					}
+				}
+			}
+			GIVEN("max_size"){
+				WHEN("called"){
+					THEN("should return the expected maximum number of contained items"){
+						auto expected_max_size = std::numeric_limits < typename small_vector < int, initial_capacity >::size_type >::max();
+						REQUIRE(victim.max_size() == expected_max_size);
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector manage capacity", "[small_vector]"){
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			small_vector<int, initial_capacity> victim = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+			GIVEN("reserve") {
+				WHEN("called with larger capacity"){
+					auto const new_capacity = initial_capacity * 2;
+
+					victim.reserve(new_capacity);
+
+					THEN("small_vector capacity should change to the nearest pow of 2"){
+						auto const expected_capacity = common::next_pow_2(new_capacity);
+						REQUIRE(victim.capacity() == expected_capacity);
+					}
+				}
+				WHEN("called with smaller capacity"){
+					auto const new_capacity = initial_capacity / 2;
+
+					victim.reserve(new_capacity);
+
+					THEN("small_vector capacity should have remained the same"){
+						REQUIRE(victim.capacity() == initial_capacity);
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector shrink_to_fit", "[small_vector]"){
+
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			small_vector<int, initial_capacity> victim = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+			GIVEN("shrink_to_fit") {
+				WHEN("called with 'large' small_vector"){
+					auto const new_capacity = initial_capacity * 2;
+					victim.reserve(new_capacity);
+
+					victim.shrink_to_fit();
+					THEN("small_vector capacity should shrink to data"){
+						REQUIRE(victim.capacity() == victim.size());
+					}
+				}
+				WHEN("called with 'small' small_vector"){
+					victim.shrink_to_fit();
+
+					THEN("small_vector capacity should remain the same"){
+						REQUIRE(victim.capacity() == initial_capacity);
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector clear", "[small_vector]"){
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			GIVEN("a small_vector containing items"){
+				small_vector<int, initial_capacity> victim = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+				WHEN("clear called") {
+					victim.clear();
+
+					THEN("items should be removed"){
+						REQUIRE(victim.size() == 0);
+						REQUIRE(victim.capacity() == initial_capacity);
+					}
+				}
+			}
+			GIVEN("an empty small_vector"){
+				small_vector<int, initial_capacity> victim;
+
+				WHEN("clear called") {
+					victim.clear();
+
+					THEN("nothing should happen"){
+						REQUIRE(victim.size() == 0);
+						REQUIRE(victim.capacity() == initial_capacity);
+					}
+				}
+			}
+		}
+		SCENARIO("small_vector insert", "[small_vector]"){
+			size_t const initial_size = 10;
+			size_t const initial_capacity = initial_size * 2;
+
+			assign_counters counters;
+
+			auto make_item = [&](int v) -> test_item {
+				return { counters, v };
+			};
+
+			random_device rdev;
+			default_random_engine re (rdev());
+
+			uniform_int_distribution < int > value_dist (1000, 10000);
+
+			GIVEN("empty small_vector") {
+
+				small_vector < test_item, initial_capacity > victim;
+
+				WHEN("insert lvalue at begin"){
+					auto item = make_item(1234);
+
+					counters.reset();
+
+					victim.insert(victim.begin(), item);
+
+					THEN("value should have been inserted in the first position"){
+						REQUIRE(victim.size() == 1);
+						REQUIRE(victim.back() == item);
+
+						REQUIRE(counters.check_copy(1));
+						REQUIRE(counters.check_move(0));
+					}
+				}
+				WHEN("insert lvalue at invalid position"){
+					auto item = make_item(1234);
+
+					counters.reset();
+
+					THEN("throw out_of_range"){
+						REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, item), std::out_of_range);
+					}
+				}
+			}
+			GIVEN("filled small_vector") {
+
+				small_vector < test_item, initial_capacity > victim;
+
+				test_item::init_items(victim, initial_capacity, counters);
+				counters.reset ();
+
+				WHEN("insert lvalue at begin"){
+					auto item = make_item(1234);
+
+					counters.reset();
+
+					victim.insert(victim.begin(), item);
+
+					THEN("value should have been inserted in the first position"){
+						REQUIRE(victim.size() == 1);
+						REQUIRE(victim.back() == item);
+
+						REQUIRE(counters.check_copy(1));
+						REQUIRE(counters.check_move(0));
+					}
+				}
+				WHEN("insert lvalue at invalid position"){
+					auto item = make_item(1234);
+
+					counters.reset();
+
+					THEN("throw out_of_range"){
+						REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, item), std::out_of_range);
+					}
+				}
+			}
+		}
+	}
+}
 /*
-
-		TEST(unit_small_vector_test, operator_equals_il) {
-
-			std::initializer_list < int > expectancy = { 1, 2, 3, 4, 5, 6, 7 ,8 ,9, 10 };
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim;
-
-			victim = expectancy;
-
-			EXPECT_EQ(victim.capacity (), unit_small_vector_test::test_size);
-
-			EXPECT_TRUE(std::equal(
-				expectancy.begin(), expectancy.end(),
-				victim.begin(), victim.end()
-			));
-		}
-
-		TEST(unit_small_vector_test, dctor) {
-
-			bool was_destroyed = false;
-
-			struct victim_t {
-
-				bool * was_destroyed_ptr = nullptr;
-
-				~victim_t(){
-					if (was_destroyed_ptr)
-						(*was_destroyed_ptr) = true;
-				}
-
-			};
-
-			{
-				small_vector < victim_t, 10 > small_v;
-				small_v.push_back ({&was_destroyed});
-			}
-
-			EXPECT_TRUE(was_destroyed);
-		}
-
-		TEST(unit_small_vector_test, dctor_pointer) {
-			bool was_destroyed = false;
-
-			struct victim_t {
-
-				bool * was_destroyed_ptr = nullptr;
-
-				victim_t () = default;
-				victim_t (bool * destroyed_ptr ) : was_destroyed_ptr (destroyed_ptr) {}
-
-				~victim_t(){
-					if (was_destroyed_ptr)
-						(*was_destroyed_ptr) = true;
-				}
-
-			};
-
-			auto victim = make_unique < victim_t > (&was_destroyed);
-
-			{
-				small_vector < victim_t *, 10 > small_v;
-				small_v.push_back (victim.get());
-			}
-
-			EXPECT_FALSE(was_destroyed);
-
-		}
-
-		TEST(unit_small_vector_test, assign_count_value) {
-			const int expected_value = 12345;
-
-			small_vector < int, unit_small_vector_test::test_size > victim;
-
-			victim.assign(unit_small_vector_test::test_size, expected_value);
-			EXPECT_EQ(
-				std::count (victim.begin(), victim.end(), expected_value),
-				unit_small_vector_test::test_size
-			);
-		}
-
-		TEST(unit_small_vector_test, assign_iterators) {
-
-			small_vector < size_t, unit_small_vector_test::test_size > expectancy;
-
-			for (size_t i = 0; i < unit_small_vector_test::test_size; ++i) {
-				expectancy.push_back(i);
-			}
-
-			small_vector < size_t, unit_small_vector_test::test_size >
-				victim;
-
-			victim.assign(expectancy.begin (), expectancy.end());
-
-			EXPECT_TRUE(std::equal(
-				expectancy.begin(), expectancy.end(),
-				victim.begin(), victim.end()
-			));
-		}
-
-		TEST(unit_small_vector_test, assign_il) {
-
-			std::initializer_list < int > expectancy = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim;
-
-			victim.assign(expectancy);
-
-			EXPECT_TRUE(std::equal(
-				expectancy.begin(), expectancy.end(),
-				victim.begin(), victim.end()
-			));
-		}
-
-		TEST(unit_small_vector_test, at_within_range) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.at (5), 5);
-		}
-
-		TEST(unit_small_vector_test, at_out_of_range) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			ASSERT_THROW (victim.at (11), std::out_of_range);
-		}
-
-		TEST(unit_small_vector_test, operator_index) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim[5], 5);
-		}
-
-		TEST(unit_small_vector_test, operator_index_edit) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			victim [5] = 11;
-
-			EXPECT_EQ (victim[5], 11);
-		}
-
-		TEST(unit_small_vector_test, front) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.front(), 0);
-		}
-
-		TEST(unit_small_vector_test, front_edit) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			victim.front() = 11;
-
-			EXPECT_EQ (victim.front(), 11);
-		}
-
-		TEST(unit_small_vector_test, front_const) {
-			const small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.front(), 0);
-		}
-
-		TEST(unit_small_vector_test, back) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.back(), 9);
-		}
-
-		TEST(unit_small_vector_test, back_edit) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			victim.back() = 11;
-
-			EXPECT_EQ (victim.back(), 11);
-		}
-
-		TEST(unit_small_vector_test, back_const) {
-			const small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.back(), 9);
-		}
-
-		TEST(unit_small_vector_test, data) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.data()[5], 5);
-		}
-
-		TEST(unit_small_vector_test, data_const) {
-			const small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			EXPECT_EQ (victim.data()[5], 5);
-		}
-
-		TEST(unit_small_vector_test, empty) {
-			const small_vector < int, unit_small_vector_test::test_size >
-				victim_a = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			const small_vector < int, unit_small_vector_test::test_size >
-				victim_b;
-
-			EXPECT_FALSE (victim_a.empty());
-			EXPECT_TRUE (victim_b.empty());
-		}
-
-		TEST(unit_small_vector_test, size) {
-			std::initializer_list < int > expectancy = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = expectancy;
-
-			EXPECT_EQ(victim.size(), expectancy.size());
-		}
-
-		TEST(unit_small_vector_test, max_size) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim;
-
-			using size_type = typename small_vector < int, 10 >::size_type;
-
-			EXPECT_EQ(
-				victim.max_size(),
-				std::numeric_limits < size_type >::max()
-			);
-		}
-
-		TEST(unit_small_vector_test, reserve) {
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = { 0, 1, 2, 3, 4 };
-
-			const size_t expected_capacity = common::next_pow_2(unit_small_vector_test::test_size * 4);
-
-			size_t size = victim.size();
-
-			victim.reserve (expected_capacity);
-
-			EXPECT_EQ (size, victim.size());
-			EXPECT_EQ (expected_capacity, victim.capacity());
-		}
-
-
-		TEST(unit_small_vector_test, shrink_to_fit) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = { 0, 1, 2, 3, 4 };
-
-			size_t size = victim.size();
-
-			victim.reserve (unit_small_vector_test::test_size * 4);
-			victim.shrink_to_fit();
-
-			EXPECT_EQ (size, victim.size());
-			EXPECT_EQ (size, victim.capacity());
-		}
-
-		TEST(unit_small_vector_test, clear) {
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-
-			size_t capacity = victim.capacity();
-
-			victim.clear();
-
-			EXPECT_EQ (0, victim.size());
-			EXPECT_EQ (capacity, victim.capacity());
-		}
 
 		TEST(unit_small_vector_test, insert_copy_at_position) {
 
@@ -880,45 +1069,6 @@ namespace cig {
 
 		}
 
-		TEST(unit_small_vector_test, push_back_copy) {
-
-			const small_vector < int, unit_small_vector_test::test_size >
-				origin = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-
-			size_t const expected_size = origin.size() + 1;
-			
-			int const value = 999;
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = origin;
-
-			victim.push_back(value);
-
-			EXPECT_EQ(victim.size(), expected_size);
-			EXPECT_EQ(victim.back(), value);
-		}
-
-		TEST(unit_small_vector_test, push_back_move) {
-
-			small_vector < small_vector_move_item, unit_small_vector_test::test_size >
-				victim;
-
-			size_t const expected_size = 1;
-
-			// reset copy and move counts
-			size_t s_copy_count = 0;
-			size_t s_move_count = 0;
-
-			small_vector_move_item item(s_move_count, s_copy_count);
-
-			victim.push_back(std::move(item));
-
-			EXPECT_EQ(victim.size(), expected_size);
-
-			EXPECT_EQ(s_copy_count, 0);
-			EXPECT_EQ(s_move_count, 1);
-		}
-
 		TEST(unit_small_vector_test, emplace_back) {
 
 			int const value_a = 999;
@@ -1094,5 +1244,3 @@ namespace cig {
 			EXPECT_TRUE(std::equal(victim_b.begin(), victim_b.end(), origin_a.begin(), origin_a.end()));
 		}
 */
-    }
-}
