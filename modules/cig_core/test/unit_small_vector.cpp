@@ -747,6 +747,21 @@ namespace cig {
 						REQUIRE(counters.check_move(0));
 					}
 				}
+                WHEN("insert rvalue at begin"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    victim.insert(victim.begin(), std::move(item));
+
+                    THEN("value should have been inserted in the first position"){
+                        REQUIRE(victim.size() == 1);
+                        REQUIRE(victim.back().value == 1234);
+
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(1));
+                    }
+                }
 				WHEN("insert lvalue at invalid position"){
 					auto item = make_item(1234);
 
@@ -756,12 +771,21 @@ namespace cig {
 						REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, item), std::out_of_range);
 					}
 				}
+                WHEN("insert rvalue at invalid position"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    THEN("throw out_of_range"){
+                        REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, std::move(item)), std::out_of_range);
+                    }
+                }
 			}
 			GIVEN("filled small_vector") {
 
 				small_vector < test_item, initial_capacity > victim;
 
-				test_item::init_items(victim, initial_capacity, counters);
+				test_item::init_items(victim, initial_size, counters);
 				counters.reset ();
 
 				WHEN("insert lvalue at begin"){
@@ -772,13 +796,44 @@ namespace cig {
 					victim.insert(victim.begin(), item);
 
 					THEN("value should have been inserted in the first position"){
-						REQUIRE(victim.size() == 1);
-						REQUIRE(victim.back() == item);
+						REQUIRE(victim.size() == initial_size + 1);
+						REQUIRE(victim.front() == item);
 
 						REQUIRE(counters.check_copy(1));
-						REQUIRE(counters.check_move(0));
+						REQUIRE(counters.check_move(10));
 					}
 				}
+                WHEN("insert lvalue at middle"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    size_t offset = victim.size () / 2;
+                    victim.insert(victim.begin() + offset, item);
+
+                    THEN("value should have been inserted in the middle position"){
+                        REQUIRE(victim.size() == initial_size + 1);
+                        REQUIRE(victim[offset] == item);
+
+                        REQUIRE(counters.check_copy(1));
+                        REQUIRE(counters.check_move(offset));
+                    }
+                }
+                WHEN("insert lvalue at end"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    victim.insert(victim.end(), item);
+
+                    THEN("value should have been inserted in the last position"){
+                        REQUIRE(victim.size() == initial_size + 1);
+                        REQUIRE(victim.back() == item);
+
+                        REQUIRE(counters.check_copy(1));
+                        REQUIRE(counters.check_move(0));
+                    }
+                }
 				WHEN("insert lvalue at invalid position"){
 					auto item = make_item(1234);
 
@@ -788,60 +843,66 @@ namespace cig {
 						REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, item), std::out_of_range);
 					}
 				}
+                WHEN("insert rvalue at begin"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    victim.insert(victim.begin(), std::move(item));
+
+                    THEN("value should have been inserted in the first position"){
+                        REQUIRE(victim.size() == initial_size + 1);
+                        REQUIRE(victim.front().value == 1234);
+
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(11));
+                    }
+                }
+                WHEN("insert rvalue at middle"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    size_t offset = victim.size () / 2;
+                    victim.insert(victim.begin() + offset, std::move(item));
+
+                    THEN("value should have been inserted in the middle position"){
+                        REQUIRE(victim.size() == initial_size + 1);
+                        REQUIRE(victim[offset].value == 1234);
+
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(1 + offset));
+                    }
+                }
+                WHEN("insert rvalue at end"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    victim.insert(victim.end(), std::move(item));
+
+                    THEN("value should have been inserted in the last position"){
+                        REQUIRE(victim.size() == initial_size + 1);
+                        REQUIRE(victim.back().value == 1234);
+
+                        REQUIRE(counters.check_copy(0));
+                        REQUIRE(counters.check_move(1));
+                    }
+                }
+                WHEN("insert rvalue at invalid position"){
+                    auto item = make_item(1234);
+
+                    counters.reset();
+
+                    THEN("throw out_of_range"){
+                        REQUIRE_THROWS_AS(victim.insert(victim.end() + 1, std::move(item)), std::out_of_range);
+                    }
+                }
 			}
 		}
 	}
 }
 /*
-
-		TEST(unit_small_vector_test, insert_copy_at_position) {
-
-			int const insert_value = 999;
-			int const insert_position = 5;
-			int const expected_size = 11;
-
-			small_vector < int, unit_small_vector_test::test_size >
-				victim = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-
-			auto position = victim.insert(victim.begin() + insert_position, insert_value);
-
-			EXPECT_EQ(expected_size, victim.size());
-			EXPECT_EQ(insert_value, victim[insert_position]);
-			EXPECT_EQ(victim.begin() + insert_position, position);
-		}
-
-		TEST(unit_small_vector_test, insert_move_at_position) {
-
-			int const insert_value = 999;
-			int const insert_position = 5;
-			int const expected_size = unit_small_vector_test::test_size + 1;
-
-			// object move / copy counters
-			size_t s_copy_count = 0;
-			size_t s_move_count = 0;
-
-			small_vector < small_vector_move_item, expected_size * 2 > victim;
-
-			small_vector_move_item::init_items(
-				victim,
-				unit_small_vector_test::test_size,
-				s_copy_count,
-				s_move_count
-			);
-
-			// reset copy and move counts
-			s_copy_count = 0;
-			s_move_count = 0;
-
-			small_vector_move_item move_it{ s_move_count, s_copy_count };
-
-			auto position = victim.insert(victim.begin() + insert_position, std::move (move_it));
-
-			EXPECT_EQ(expected_size, victim.size());
-			EXPECT_EQ(s_copy_count, 0);
-			EXPECT_EQ(s_move_count, expected_size - insert_position);
-			EXPECT_EQ(position, victim.begin() + insert_position);
-		}
 
 		TEST(unit_small_vector_test, insert_n_copies_at_position) {
 
