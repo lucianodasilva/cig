@@ -12,6 +12,10 @@ using namespace std;
 namespace cig {
 	namespace mapper {
 
+		size_t const low_freq_cap = 4;
+
+		size_t const med_freq_cap = 8;
+
 		struct location {
 			string      file;
 			uint32_t    line   {0},
@@ -130,7 +134,7 @@ namespace cig {
 		};
 
 		struct type {
-			small_vector < template_argument, 8 >
+			small_vector < template_argument, med_freq_cap >
 							template_arguments;
 			string			qualified_name;
 			string			identifier;
@@ -157,7 +161,7 @@ namespace cig {
 		};
 
 		struct method {
-			small_vector < method_parameter, 8 >
+			small_vector < method_parameter, med_freq_cap >
 								parameters;
 			mapper::location	location;
 			string				identifier;
@@ -174,13 +178,15 @@ namespace cig {
 		};
 
 		struct structure {
-			small_vector < field, 8 >
+			small_vector < template_parameter, low_freq_cap >
+								template_parameters;
+			small_vector < field, med_freq_cap >
 								fields;
-			small_vector < method, 8 >
+			small_vector < method, med_freq_cap >
 								methods;
-			small_vector < structure_ptr, 4 >
+			small_vector < structure_ptr, low_freq_cap >
 								parents;
- 
+
 			string				qualified_name;
 			string				identifier;
 
