@@ -22,7 +22,7 @@ namespace cig {
 					_default_action = action;
 				}
 
-				inline storage & add_action (const key_type & key, const action_type & action) {
+				inline dispatcher_storage & add_action (const key_type & key, const action_type & action) {
 					_actions[key] = move(action);
 					return *this;
 				}

@@ -18,8 +18,7 @@ namespace cig {
 		class parser {
 		public:
 
-
-
+			virtual source::cursor get_semantic_parent (source::cursor const & cursor) = 0;
 
 		};
 
