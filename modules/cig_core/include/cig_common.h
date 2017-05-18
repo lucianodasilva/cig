@@ -107,7 +107,8 @@ namespace cig {
 
 }
 
-#include "cig_common_small_vector.h"
+#include "cig_common_dispatcher.h"
 #include "cig_common_indexed_ptr.h"
+#include "cig_common_small_vector.h"
 
 #endif //_cig_common_h_

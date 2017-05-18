@@ -98,6 +98,7 @@ namespace cig {
 
 		struct cursor {
 			source::location	location;
+			string				qualified_name;
 			string 				identifier;
 			cursor_kind 		kind;
 		};
