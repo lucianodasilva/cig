@@ -1,16 +1,17 @@
 #pragma once
-#ifndef _cig_mapper_model_h_
-#define _cig_mapper_model_h_
+#ifndef _cig_source_model_h_
+#define _cig_source_model_h_
 
 #include <cig_common.h>
 
 #include <cinttypes>
 #include <string>
+#include <vector>
 
 using namespace std;
 
 namespace cig {
-	namespace mapper {
+	namespace source {
 
 		size_t const low_freq_cap = 4;
 
@@ -96,7 +97,7 @@ namespace cig {
 		};
 
 		struct cursor {
-			mapper::location	location;
+			source::location	location;
 			string 				identifier;
 			cursor_kind 		kind;
 		};
@@ -116,11 +117,13 @@ namespace cig {
 		// predefine map types and ptrs
 		struct type;
 
-		using type_ptr = indexed_ptr < type >;
+		using type_ptr = indexed_ptr < vector < type > >;
+		using type_const_ptr = indexed_ptr < vector < type > const >;
 
 		struct structure;
 
-		using structure_ptr = indexed < structure >;
+		using structure_ptr = indexed_ptr < vector < structure > >;
+		using structure_const_ptr = indexed_ptr < vector < structure > const >;
 
 		struct template_parameter {
 			type_ptr				type;
@@ -146,13 +149,13 @@ namespace cig {
 		};
 
 		struct field {
-			mapper::location	location;
+			source::location	location;
 
 			string				qualified_name;
 			string				identifier;
 
 			type_ptr			type;
-			mapper::visibility	visibility;
+			source::visibility	visibility;
 		};
 
 		struct method_parameter {
@@ -163,11 +166,11 @@ namespace cig {
 		struct method {
 			small_vector < method_parameter, med_freq_cap >
 								parameters;
-			mapper::location	location;
+			source::location	location;
 			string				identifier;
 			string				qualified_name;
 			type_ptr			return_type;
-			mapper::visibility	visibility;
+			source::visibility	visibility;
 			cursor_flags		flags;
 		};
 
@@ -196,4 +199,4 @@ namespace cig {
 	}
 }
 
-#endif //_cig_mapper_model_h_
+#endif //_cig_source_model_h_

@@ -22,12 +22,12 @@ namespace cig {
 
 		explicit indexed_ptr(_src_t & source, size_type index) { reset(source, index); }
 
-		indexed_ptr(const indexed_ptr & v) { reset(v._source, v._index); }
+		indexed_ptr(const indexed_ptr & v) { reset(*v._source, v._index); }
 
 		indexed_ptr(indexed_ptr && v) : indexed_ptr () { this->swap(v); }
 
 		indexed_ptr & operator = (const indexed_ptr & v) noexcept {
-			reset(v._source, v._index);
+			reset(*v._source, v._index);
 			return *this;
 		}
 
@@ -42,7 +42,7 @@ namespace cig {
 		}
 		
 		void reset(source_type & source, size_type index) {
-			_source = source;
+			_source = &source;
 			_index = index;
 		}
 
@@ -79,7 +79,7 @@ namespace cig {
 
 	template < class _src_t >
 	inline indexed_ptr < _src_t > make_indexed( _src_t & source, typename _src_t::size_type index ) {
-		return { source, index };
+		return indexed_ptr < _src_t > { source, index };
 	}
 	
 }
