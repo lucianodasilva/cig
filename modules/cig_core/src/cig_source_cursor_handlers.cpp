@@ -1,4 +1,5 @@
 #include "cig_source_cursor_handlers.h"
+#include "cig_source_mapper.h"
 
 namespace cig {
 	namespace source {
@@ -9,6 +10,7 @@ namespace cig {
 			void struct_base_action (parser_context & cxt, const source::cursor & cursor, structure_kind kind) {
 				auto structure = cxt.wip_map.get_structure (cursor.qualified_name);
 
+				structure->semantic_path = make_semantic_path (cxt, cursor);
 				structure->identifier = cursor.identifier;
 				structure->kind = kind;
 			}
@@ -26,6 +28,7 @@ namespace cig {
 				auto parent_cursor = cxt.parser.get_semantic_parent(cursor);
 
 				auto sem_parent_struct = cxt.wip_map.get_structure(parent_cursor.qualified_name);
+
 				sem_parent_struct->parents.push_back(base_struct);
 			}
 

@@ -32,6 +32,12 @@ namespace cig {
 
 		};
 
+		semantic_node_kind to_semantic_node_kind (cursor_kind kind);
+
+		semantic_node to_semantic_node (parser_context & context, source::cursor const & cursor);
+
+		semantic_path make_semantic_path (parser_context & context, source::cursor cursor);
+
 	}
 }
 

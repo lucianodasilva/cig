@@ -101,6 +101,10 @@ namespace cig {
 			string				qualified_name;
 			string 				identifier;
 			cursor_kind 		kind;
+
+			inline bool is_empty() const {
+				return location.is_empty();
+			}
 		};
 
 		enum struct template_parameter_kind {
@@ -176,10 +180,24 @@ namespace cig {
 		};
 
 		enum struct structure_kind {
-			unknown,
+			unsupported,
 			structure_struct,
 			structure_class
 		};
+
+		enum struct semantic_node_kind {
+			unsupported,
+			namespace_node,
+			structure_node
+		};
+
+		struct semantic_node {
+			string				identifier;
+			structure_ptr 		structure;
+			semantic_node_kind 	kind;
+		};
+
+		using semantic_path = small_vector < semantic_node, med_freq_cap >;
 
 		struct structure {
 			small_vector < template_parameter, low_freq_cap >
@@ -191,10 +209,14 @@ namespace cig {
 			small_vector < structure_ptr, low_freq_cap >
 								parents;
 
+			source::semantic_path
+								semantic_path;
+
 			string				qualified_name;
 			string				identifier;
 
 			structure_kind		kind;
+			source::visibility	visibility;
 		};
 
 	}

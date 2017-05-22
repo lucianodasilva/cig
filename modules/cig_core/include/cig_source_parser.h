@@ -4,6 +4,10 @@
 #include "cig_settings.h"
 #include "cig_source_map.h"
 
+#include <string>
+
+namespace std;
+
 namespace cig {
 	namespace source {
 
@@ -18,7 +22,7 @@ namespace cig {
 		class parser {
 		public:
 
-			virtual source::cursor get_semantic_parent (source::cursor const & cursor) = 0;
+			virtual source::cursor 	get_semantic_parent (source::cursor const & cursor) = 0;
 
 		};
 
