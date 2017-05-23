@@ -11,19 +11,21 @@ namespace std;
 namespace cig {
 	namespace source {
 
-		class parser;
-
-		struct parser_context {
-			source::parser &	parser;
-			cig::settings 		settings;
-			map 				wip_map;
-		};
-
 		class parser {
 		public:
 
-			virtual source::cursor 	get_semantic_parent (source::cursor const & cursor) = 0;
+			// visitor state
+			virtual cursor next() = 0;
+			virtual cursor_stack const & get_current_cursor_stack () = 0;
 
+			// get type info
+			virtual cursor 		get_type_declaration 	(cursor_type const & type) const = 0;
+			virtual cursor_type get_canonical_type 		(cursor_type const & type) const = 0;
+			virtual bool 		is_const_qualified 		(cursor_type const & type) const = 0;
+
+			// get cursor info
+			virtual visibility 	get_visibility 			(source::cursor const & cursor) const = 0;
+			virtual cursor_type get_type 				(source::cursor const & cursor) const = 0;
 		};
 
 	}

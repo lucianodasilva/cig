@@ -3,26 +3,44 @@
 namespace cig {
 	namespace source {
 
-		semantic_node_kind to_semantic_node_kind (cursor_kind kind) {
+		source::map mapper::build_map (cig::settings const & settings, source::parser & parser) const {
+
+			source::map 	map;
+			source::cursor 	cursor;
+
+			mapper_context cxt {
+				*this,
+				parser,
+				settings,
+				map
+			};
+
+			while (!(cursor = parser.next()).is_empty())
+				cursor_dispatcher.execute (cursor.kind, cxt, cursor);
+
+			return map;
+		}
+
+		struct_path_node_kind to_struct_path_node_kind (cursor_kind kind) {
 			switch(kind) {
 				case cursor_kind::decl_namespace:
-					return semantic_node_kind::namespace_node;
+					return struct_path_node_kind::namespace_node;
 				case cursor_kind::decl_class:
-					return semantic_node_kind::structure_node;
+					return struct_path_node_kind::structure_node;
 				case cursor_kind::decl_struct:
-					return semantic_node_kind::structure_node;
+					return struct_path_node_kind::structure_node;
 				default:
-					return semantic_node_kind::unsupported;
+					return struct_path_node_kind::unsupported;
 			}
 		}
 
-		semantic_node to_semantic_node (parser_context & context, source::cursor const & cursor) {
+		struct_path_node to_struct_path_node (mapper_context & context, source::cursor const & cursor) {
 			structure_ptr ptr;
 
-			auto node_kind = to_semantic_node_kind (cursor.kind);
+			auto node_kind = to_struct_path_node_kind (cursor.kind);
 
-			if (node_kind == semantic_node_kind::structure_node)
-				ptr = context.wip_map.find_structure(cursor.qualified_name);
+			if (node_kind == struct_path_node_kind::structure_node)
+				ptr = context.map.find_structure(cursor.qualified_name);
 
 			return {
 				cursor.identifier,
@@ -31,18 +49,15 @@ namespace cig {
 			};
 		}
 
-		semantic_path make_semantic_path (parser_context & context, source::cursor cursor) {
+		source::struct_path make_struct_path (mapper_context & context, source::cursor cursor) {
 
-			semantic_path semantic_stack;
+			auto & 		stack = context.parser.get_current_cursor_stack();
+			struct_path path;
 
-			while(!cursor.is_empty()) {
-				cursor = context.parser.get_semantic_parent(cursor);
-				semantic_stack.push_back(to_semantic_node(context, cursor));
-			}
+			for (auto & c : stack)
+				path.push_back (to_semantic_node (context, c));
 
-			reverse(semantic_stack.begin(), semantic_stack.end());
-
-			return semantic_stack;
+			return path;
 
 		}
 

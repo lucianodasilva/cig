@@ -6,37 +6,45 @@
 #include "cig_source_map.h"
 #include "cig_source_model.h"
 #include "cig_source_parser.h"
+#include "cig_settings.h"
 
 namespace cig {
 	namespace source {
 
+		struct mapper_context {
+			source::mapper const &	mapper;
+			source::parser &		parser;
+			cig::settings const &	settings;
+			source::map &			map;
+		};
+
 		using cursor_dispatcher = common::dispatcher <
 			cursor_kind,
-			void (parser_context & context, source::cursor const & cursor)
+			void (mapper_context & cxt, source::cursor const & cursor)
 		>;
 
 		using type_dispatcher = common::dispatcher <
 			type_kind,
-			type_ptr (parser_context & context, source::cursor_type & type)
+			type_ptr (mapper_context & cxt, source::cursor_type const & type)
 		>;
 
-		struct mapper {
+		class mapper {
 		public:
 
 			source::cursor_dispatcher const	cursor_dispatcher;
 			source::type_dispatcher const	type_dispatcher;
 
-			void map_cursor (source::parser & parser, source::cursor const & cursor);
+			source::map build_map (cig::settings const & settings, source::parser & parser) const;
 
 			static mapper make_default();
 
 		};
 
-		semantic_node_kind to_semantic_node_kind (cursor_kind kind);
+		struct_path_node_kind to_struct_path_node_kind (cursor_kind kind);
 
-		semantic_node to_semantic_node (parser_context & context, source::cursor const & cursor);
+		struct_path_node to_semantic_node (mapper_context & context, source::cursor const & cursor);
 
-		semantic_path make_semantic_path (parser_context & context, source::cursor cursor);
+		struct_path make_struct_path (mapper_context & context, source::cursor const & cursor);
 
 	}
 }

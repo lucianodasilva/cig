@@ -5,42 +5,67 @@ namespace cig {
 	namespace source {
 		namespace cursor_handlers {
 
-			void cursor_default_handler (parser_context & cxt, const source::cursor & cursor) {}
+			void cursor_default_handler (mapper_context & cxt, const source::cursor & cursor) {}
 
-			void struct_base_action (parser_context & cxt, const source::cursor & cursor, structure_kind kind) {
-				auto structure = cxt.wip_map.get_structure (cursor.qualified_name);
+			void struct_base_action (mapper_context & cxt, const source::cursor & cursor, structure_kind kind) {
+				auto new_structure = cxt.map.get_structure (cursor.qualified_name);
 
-				structure->semantic_path = make_semantic_path (cxt, cursor);
-				structure->identifier = cursor.identifier;
-				structure->kind = kind;
+				structure::apply_cursor(*new_structure, cursor);
+
+				new_structure->struct_path = make_struct_path (cxt, cursor);
+				new_structure->kind = kind;
 			}
 
-			void struct_handler (parser_context & cxt, const source::cursor & cursor) {
+			void struct_handler (mapper_context & cxt, const source::cursor & cursor) {
 				struct_base_action (cxt, cursor, structure_kind::structure_struct);
 			}
 
-			void class_handler (parser_context & cxt, const source::cursor & cursor) {
+			void class_handler (mapper_context & cxt, const source::cursor & cursor) {
 				struct_base_action (cxt, cursor, structure_kind::structure_class);
 			}
 
-			void base_spec_handler (parser_context & cxt, const source::cursor & cursor) {
-				auto base_struct = cxt.wip_map.get_structure(cursor.qualified_name);
-				auto parent_cursor = cxt.parser.get_semantic_parent(cursor);
+			void base_spec_handler (mapper_context & cxt, const source::cursor & cursor) {
+				// get or create base type map structure
+				auto base_struct = cxt.map.get_structure(cursor.qualified_name);
 
-				auto sem_parent_struct = cxt.wip_map.get_structure(parent_cursor.qualified_name);
+				// get derived structure and add to parent list
+				auto & 	cursor_stack =
+					cxt.parser.get_current_cursor_stack();
+
+				auto 	sem_parent_struct =
+					cxt.map.get_structure(cursor_stack.back().qualified_name);
 
 				sem_parent_struct->parents.push_back(base_struct);
 			}
 
-			void field_handler (parser_context & cxt, const source::cursor & cursor) {}
+			void field_handler (mapper_context & cxt, const source::cursor & cursor) {
+				auto cursor_type = cxt.parser.get_type (cursor);
+				
+				auto type = cxt.mapper.type_dispatcher.execute (cursor_type.kind, cxt, cursor_type);
 
-			void method_handler (parser_context & cxt, const source::cursor & cursor) {}
+				// get derived structure and add to field list
+				auto & 	cursor_stack =
+					cxt.parser.get_current_cursor_stack();
 
-			void function_handler (parser_context & cxt, const source::cursor & cursor) {}
+				auto 	sem_parent_struct =
+					cxt.map.get_structure(cursor_stack.back().qualified_name);
 
-			void parameter_handler (parser_context & cxt, const source::cursor & cursor) {}
+				sem_parent_struct->fields.emplace_back(
+					cursor.location,
+					cursor.qualified_name,
+					cursor.identifier,
+					type,
+					cxt.parser.get_visibility(cursor)
+				);
+			}
 
-			void namespace_handler (parser_context & cxt, const source::cursor & cursor) {}
+			void method_handler (mapper_context & cxt, const source::cursor & cursor) {}
+
+			void function_handler (mapper_context & cxt, const source::cursor & cursor) {}
+
+			void parameter_handler (mapper_context & cxt, const source::cursor & cursor) {}
+
+			void namespace_handler (mapper_context & cxt, const source::cursor & cursor) {}
 
 		}
 	}

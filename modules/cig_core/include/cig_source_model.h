@@ -107,6 +107,8 @@ namespace cig {
 			}
 		};
 
+		using cursor_stack = small_vector < cursor, med_freq_cap >;
+
 		enum struct template_parameter_kind {
 			unsupported,
 			type,
@@ -185,19 +187,19 @@ namespace cig {
 			structure_class
 		};
 
-		enum struct semantic_node_kind {
+		enum struct struct_path_node_kind {
 			unsupported,
 			namespace_node,
 			structure_node
 		};
 
-		struct semantic_node {
-			string				identifier;
-			structure_ptr 		structure;
-			semantic_node_kind 	kind;
+		struct struct_path_node {
+			string					identifier;
+			structure_ptr 			structure;
+			struct_path_node_kind	kind;
 		};
 
-		using semantic_path = small_vector < semantic_node, med_freq_cap >;
+		using struct_path = small_vector < struct_path_node, med_freq_cap >;
 
 		struct structure {
 			small_vector < template_parameter, low_freq_cap >
@@ -209,14 +211,15 @@ namespace cig {
 			small_vector < structure_ptr, low_freq_cap >
 								parents;
 
-			source::semantic_path
-								semantic_path;
+			source::struct_path struct_path;
 
 			string				qualified_name;
 			string				identifier;
 
 			structure_kind		kind;
 			source::visibility	visibility;
+
+			static void apply_cursor (structure & strct, source::cursor const & cursor);
 		};
 
 	}
